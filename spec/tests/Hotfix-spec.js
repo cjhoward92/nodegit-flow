@@ -183,7 +183,7 @@ describe('Hotfix', function() {
     function(done) {
       const hotfixName = '1.0.0';
       const fullTagName = `refs/tags/${this.versionPrefix}${hotfixName}`;
-      const releaseBranch = `refs/heads/${this.releasePrefix}test`;
+      const releaseBranch = `${this.releasePrefix}test`;
 
       let hotfixBranch;
       Hotfix.startHotfix(this.repo, hotfixName)
@@ -198,18 +198,40 @@ describe('Hotfix', function() {
             this.firstCommit
           );
         })
-        .then(() => RepoUtils.createAndCheckoutBranch(this.repo, `${this.releasePrefix}test`, this.firstCommit.id()))
-        .then(() => {
+        .then(() => this.repo.createBranch(releaseBranch, this.firstCommit.id()))
+        .then(() => this.repo.checkoutBranch(hotfixBranch))
+        .then(() => Hotfix.finishHotfix(this.repo, hotfixName, {keepBranch: true}))
+        .then(() => expectFinishHotfixSuccess.call(this, hotfixBranch, fullTagName, releaseBranch, true))
+        .then(done);
+    });
+
+  it('should be able to finish hotfix statically and keep the branch when multiple release branches exists',
+    function(done) {
+      const hotfixName = '1.0.0';
+      const fullTagName = `refs/tags/${this.versionPrefix}${hotfixName}`;
+      const releaseBranch = `${this.releasePrefix}test`;
+      const otherReleaseBranch = `${this.releasePrefix}test2`;
+      const selectReleaseBranchCallback = (refs) => {
+        return Promise.resolve(refs[0]);
+      };
+
+      let hotfixBranch;
+      Hotfix.startHotfix(this.repo, hotfixName)
+        .then((_hotfixBranch) => {
+          hotfixBranch = _hotfixBranch;
+          expectStartHotfixSuccess(hotfixBranch, this.hotfixPrefix + hotfixName);
           return RepoUtils.commitFileToRepo(
             this.repo,
-            'anotherFile2.js',
-            'Hello World...',
-            'release commit',
+            'anotherFile.js',
+            'Hello World',
+            'second commit',
             this.firstCommit
           );
         })
+        .then(() => this.repo.createBranch(releaseBranch, this.firstCommit.id()))
+        .then(() => this.repo.createBranch(otherReleaseBranch, this.firstCommit.id()))
         .then(() => this.repo.checkoutBranch(hotfixBranch))
-        .then(() => Hotfix.finishHotfix(this.repo, hotfixName, {keepBranch: true}))
+        .then(() => Hotfix.finishHotfix(this.repo, hotfixName, {keepBranch: true, selectReleaseBranchCallback}))
         .then(() => expectFinishHotfixSuccess.call(this, hotfixBranch, fullTagName, releaseBranch, true))
         .then(done);
     });

@@ -123,7 +123,7 @@ class Hotfix {
 
           // maybe we should cancel here?
           if (releaseRefs.length > 1) {
-            return selectReleaseBranchCallback()
+            return selectReleaseBranchCallback(releaseRefs)
               .then(releaseName => {
                 secondaryMergeBranchName = releaseName;
                 return Promise.resolve();
@@ -152,7 +152,6 @@ class Hotfix {
         hotfixCommit = commits[1];
         masterCommit = commits[2];
 
-        //TODO see why merge fails
         // If either secondary or master point to the same commit as the hotfix branch cancel
         // their respective merge
         cancelSecondaryMerge = secondaryCommit.id().toString() === hotfixCommit.id().toString();
