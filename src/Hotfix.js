@@ -112,9 +112,9 @@ class Hotfix {
       })
       .then((refs) => {
         const fullReleaseRefPrefix = `refs/heads/${releaseBranchPrefix}`;
-        const releaseRefs = R.compose(
-          R.curry(R.map)(r => r.substring('refs/heads/'.length)),
-          R.curry(R.filter)(r => r.startsWith(fullReleaseRefPrefix))
+        const releaseRefs = R.pipe(
+          R.filter(r => r.startsWith(fullReleaseRefPrefix)),
+          R.map(r => r.substring('refs/heads/'.length))
         )(refs);
 
         if (releaseRefs.length > 0) {
