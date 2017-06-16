@@ -15,15 +15,16 @@ const expectStartHotfixSuccess = function expectStartHotfixSuccess(hotfixBranch,
 const expectFinishHotfixSuccess = function expectFinishHotfixSuccess(
   hotfixBranch,
   expectedTagName,
+  branchName,
   keepBranch,
-  developMergeMessage,
+  branchMergeMessage,
   masterMergeMessage
 ) {
-  let developBranch;
+  let otherBranch;
   let masterBranch;
-  let developCommit;
+  let otherCommit;
   let masterCommit;
-  const promise = Promise.all([this.config['gitflow.branch.develop'], this.config['gitflow.branch.master']].map(
+  const promise = Promise.all([branchName, this.config['gitflow.branch.master']].map(
     (branch) => NodeGit.Branch.lookup(
       this.repo,
       branch,
@@ -31,19 +32,19 @@ const expectFinishHotfixSuccess = function expectFinishHotfixSuccess(
     )
   ))
   .then((branches) => {
-    developBranch = branches[0];
+    otherBranch = branches[0];
     masterBranch = branches[1];
-    expect(developBranch.isHead());
+    expect(otherBranch.isHead());
     return Promise.all(branches.map((branch) => this.repo.getCommit(branch.target())));
   })
   .then((commits) => {
-    developCommit = commits[0];
+    otherCommit = commits[0];
     masterCommit = commits[1];
     const expectedDevelopCommitMessage
-      = developMergeMessage || utils.Merge.getMergeMessage(developBranch, hotfixBranch);
+      = branchMergeMessage || utils.Merge.getMergeMessage(otherBranch, hotfixBranch);
     const expectedMasterCommitMessage
       = masterMergeMessage || utils.Merge.getMergeMessage(masterBranch, hotfixBranch);
-    expect(developCommit.message()).toBe(expectedDevelopCommitMessage);
+    expect(otherCommit.message()).toBe(expectedDevelopCommitMessage);
     expect(masterCommit.message()).toBe(expectedMasterCommitMessage);
     return NodeGit.Reference.lookup(this.repo, expectedTagName);
   })
@@ -81,6 +82,8 @@ describe('Hotfix', function() {
         this.config = NodeGit.Flow.getConfigDefault();
         this.hotfixPrefix = this.config['gitflow.prefix.hotfix'];
         this.versionPrefix = this.config['gitflow.prefix.versiontag'];
+        this.releasePrefix = this.config['gitflow.prefix.release'];
+        this.developBranch = this.config['gitflow.branch.develop'];
 
         return NodeGit.Flow.init(this.repo, this.config);
       })
@@ -129,7 +132,7 @@ describe('Hotfix', function() {
         );
       })
       .then(() => Hotfix.finishHotfix(this.repo, hotfixName))
-      .then(() => expectFinishHotfixSuccess.call(this, hotfixBranch, fullTagName))
+      .then(() => expectFinishHotfixSuccess.call(this, hotfixBranch, fullTagName, this.developBranch))
       .then(done);
   });
 
@@ -151,7 +154,7 @@ describe('Hotfix', function() {
         );
       })
       .then(() => this.flow.finishHotfix(hotfixName))
-      .then(() => expectFinishHotfixSuccess.call(this, hotfixBranch, fullTagName))
+      .then(() => expectFinishHotfixSuccess.call(this, hotfixBranch, fullTagName, this.developBranch))
       .then(done);
   });
 
@@ -172,9 +175,44 @@ describe('Hotfix', function() {
         );
       })
       .then(() => Hotfix.finishHotfix(this.repo, hotfixName, {keepBranch: true}))
-      .then(() => expectFinishHotfixSuccess.call(this, hotfixBranch, fullTagName, true))
+      .then(() => expectFinishHotfixSuccess.call(this, hotfixBranch, fullTagName, this.developBranch, true))
       .then(done);
   });
+
+  it('should be able to finish hotfix statically and keep the branch when a single release branch exists',
+    function(done) {
+      const hotfixName = '1.0.0';
+      const fullTagName = `refs/tags/${this.versionPrefix}${hotfixName}`;
+      const releaseBranch = `refs/heads/${this.releasePrefix}test`;
+
+      let hotfixBranch;
+      Hotfix.startHotfix(this.repo, hotfixName)
+        .then((_hotfixBranch) => {
+          hotfixBranch = _hotfixBranch;
+          expectStartHotfixSuccess(hotfixBranch, this.hotfixPrefix + hotfixName);
+          return RepoUtils.commitFileToRepo(
+            this.repo,
+            'anotherFile.js',
+            'Hello World',
+            'second commit',
+            this.firstCommit
+          );
+        })
+        .then(() => RepoUtils.createAndCheckoutBranch(this.repo, `${this.releasePrefix}test`, this.firstCommit.id()))
+        .then(() => {
+          return RepoUtils.commitFileToRepo(
+            this.repo,
+            'anotherFile2.js',
+            'Hello World...',
+            'release commit',
+            this.firstCommit
+          );
+        })
+        .then(() => this.repo.checkoutBranch(hotfixBranch))
+        .then(() => Hotfix.finishHotfix(this.repo, hotfixName, {keepBranch: true}))
+        .then(() => expectFinishHotfixSuccess.call(this, hotfixBranch, fullTagName, releaseBranch, true))
+        .then(done);
+    });
 
   it('should be able to finish hotfix using flow instance and keep the branch', function(done) {
     const hotfixName = '1.0.0';
@@ -194,7 +232,7 @@ describe('Hotfix', function() {
         );
       })
       .then(() => this.flow.finishHotfix(hotfixName, {keepBranch: true}))
-      .then(() => expectFinishHotfixSuccess.call(this, hotfixBranch, fullTagName, true))
+      .then(() => expectFinishHotfixSuccess.call(this, hotfixBranch, fullTagName, this.developBranch, true))
       .then(done);
   });
 
@@ -213,6 +251,7 @@ describe('Hotfix', function() {
         this,
         hotfixBranch,
         fullTagName,
+        this.developBranch,
         true,
         expectedCommitMessage,
         expectedCommitMessage

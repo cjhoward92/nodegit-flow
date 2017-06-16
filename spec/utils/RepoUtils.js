@@ -39,6 +39,11 @@ const RepoUtils = {
     if (fse.existsSync(repoPath)) {
       fse.removeSync(repoPath);
     }
+  },
+
+  createAndCheckoutBranch(repo, fullBranchName, commit) {
+    return repo.createBranch(fullBranchName, commit)
+      .then(branch => repo.checkoutBranch(branch));
   }
 };
 

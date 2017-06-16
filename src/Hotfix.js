@@ -108,35 +108,36 @@ class Hotfix {
 
         // This is the default, unless a single release branch exists, then use that
         secondaryPostMergeCallback = postDevelopMergeCallback;
-
-        return repo.getReferences(NodeGit.References.TYPE.LISTALL);
+        return repo.getReferenceNames(NodeGit.Reference.TYPE.LISTALL);
       })
       .then((refs) => {
         const fullReleaseRefPrefix = `refs/heads/${releaseBranchPrefix}`;
-        const releaseRefs = R.filter(r => r.name().startsWith(fullReleaseRefPrefix), refs);
+        const releaseRefs = R.compose(
+          R.curry(R.map)(r => r.substring('refs/heads/'.length)),
+          R.curry(R.filter)(r => r.startsWith(fullReleaseRefPrefix))
+        )(refs);
 
-        if (releaseRefs.length === 1) {
+        if (releaseRefs.length > 0) {
           secondaryPostMergeCallback = postReleaseMergeCallback;
-          secondaryMergeBranchName = releaseRefs[0].name().substring(fullReleaseRefPrefix.length);
+          secondaryMergeBranchName = releaseRefs[0];
+
+          // maybe we should cancel here?
+          if (releaseRefs.length > 1) {
+            return selectReleaseBranchCallback()
+              .then(releaseName => {
+                secondaryMergeBranchName = releaseName;
+                return Promise.resolve();
+              });
+          }
         }
-
-        const selectReleaseBranchPromise
-          = releaseRefs.length > 1
-            ? selectReleaseBranchCallback
-                .then(releaseName => {
-                  secondaryPostMergeCallback = postReleaseMergeCallback;
-                  secondaryMergeBranchName = releaseName;
-                  return undefined;
-                })
-            : Promise.resolve();
-
+        return Promise.resolve();
+      })
+      .then(() => {
         // Get the secondary, master, and hotfix branch
-        const getBranchesPromise = Promise.all(
+        return Promise.all(
           [secondaryMergeBranchName, hotfixBranchName, masterBranchName]
             .map((branchName) => NodeGit.Branch.lookup(repo, branchName, NodeGit.Branch.BRANCH.LOCAL))
         );
-
-        return R.pipeP(selectReleaseBranchPromise, getBranchesPromise)();
       })
       .then((branches) => {
         secondaryBranch = branches[0];
@@ -151,6 +152,7 @@ class Hotfix {
         hotfixCommit = commits[1];
         masterCommit = commits[2];
 
+        //TODO see why merge fails
         // If either secondary or master point to the same commit as the hotfix branch cancel
         // their respective merge
         cancelSecondaryMerge = secondaryCommit.id().toString() === hotfixCommit.id().toString();
