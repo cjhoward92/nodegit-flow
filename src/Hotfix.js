@@ -1,4 +1,5 @@
 const NodeGit = require('nodegit');
+const R = require('ramda');
 const Config = require('./Config');
 
 const constants = require('./constants');
@@ -69,7 +70,9 @@ class Hotfix {
       processMergeMessageCallback,
       beforeMergeCallback = () => {},
       postDevelopMergeCallback = () => {},
-      postMasterMergeCallback = () => {}
+      postMasterMergeCallback = () => {},
+      postReleaseMergeCallback = () => {},
+      selectReleaseBranchCallback = () => {}
     } = options;
 
     if (!repo) {
@@ -80,55 +83,84 @@ class Hotfix {
       return Promise.reject(new Error('Hotfix name is required'));
     }
 
-    let developBranchName;
     let hotfixBranchName;
+    let releaseBranchPrefix;
+    let secondaryMergeBranchName;
     let masterBranchName;
     let cancelMasterMerge;
-    let cancelDevelopMerge;
-    let developBranch;
+    let cancelSecondaryMerge;
+    let secondaryBranch;
     let hotfixBranch;
     let masterBranch;
-    let developCommit;
     let hotfixCommit;
     let masterCommit;
+    let secondaryCommit;
     let mergeCommit;
     let versionPrefix;
+    let secondaryPostMergeCallback;
     return Config.getConfig(repo)
       .then((config) => {
-        developBranchName = config['gitflow.branch.develop'];
+        secondaryMergeBranchName = config['gitflow.branch.develop'];
         hotfixBranchName = config['gitflow.prefix.hotfix'] + hotfixVersion;
         masterBranchName = config['gitflow.branch.master'];
         versionPrefix = config['gitflow.prefix.versiontag'];
+        releaseBranchPrefix = config['gitflow.prefix.release'];
 
-        // Get the develop, master, and hotfix branch
-        return Promise.all(
-          [developBranchName, hotfixBranchName, masterBranchName]
+        // This is the default, unless a single release branch exists, then use that
+        secondaryPostMergeCallback = postDevelopMergeCallback;
+
+        return repo.getReferences(NodeGit.References.TYPE.LISTALL);
+      })
+      .then((refs) => {
+        const fullReleaseRefPrefix = `refs/heads/${releaseBranchPrefix}`;
+        const releaseRefs = R.filter(r => r.name().startsWith(fullReleaseRefPrefix), refs);
+
+        if (releaseRefs.length === 1) {
+          secondaryPostMergeCallback = postReleaseMergeCallback;
+          secondaryMergeBranchName = releaseRefs[0].name().substring(fullReleaseRefPrefix.length);
+        }
+
+        const selectReleaseBranchPromise
+          = releaseRefs.length > 1
+            ? selectReleaseBranchCallback
+                .then(releaseName => {
+                  secondaryPostMergeCallback = postReleaseMergeCallback;
+                  secondaryMergeBranchName = releaseName;
+                  return undefined;
+                })
+            : Promise.resolve();
+
+        // Get the secondary, master, and hotfix branch
+        const getBranchesPromise = Promise.all(
+          [secondaryMergeBranchName, hotfixBranchName, masterBranchName]
             .map((branchName) => NodeGit.Branch.lookup(repo, branchName, NodeGit.Branch.BRANCH.LOCAL))
         );
+
+        return R.pipeP(selectReleaseBranchPromise, getBranchesPromise)();
       })
       .then((branches) => {
-        developBranch = branches[0];
+        secondaryBranch = branches[0];
         hotfixBranch = branches[1];
         masterBranch = branches[2];
 
-        // Get the commits that the develop, master, and hotfix branches point to
+        // Get the commits that the secondary, master, and hotfix branches point to
         return Promise.all(branches.map((branch) => repo.getCommit(branch.target())));
       })
       .then((commits) => {
-        developCommit = commits[0];
+        secondaryCommit = commits[0];
         hotfixCommit = commits[1];
         masterCommit = commits[2];
 
-        // If either develop or master point to the same commit as the hotfix branch cancel
+        // If either secondary or master point to the same commit as the hotfix branch cancel
         // their respective merge
-        cancelDevelopMerge = developCommit.id().toString() === hotfixCommit.id().toString();
+        cancelSecondaryMerge = secondaryCommit.id().toString() === hotfixCommit.id().toString();
         cancelMasterMerge = masterCommit.id().toString() === hotfixCommit.id().toString();
 
         // Merge hotfix into develop
-        if (!cancelDevelopMerge) {
-          return Promise.resolve(beforeMergeCallback(developBranchName, hotfixBranchName))
-            .then(() => utils.Repo.merge(developBranch, hotfixBranch, repo, processMergeMessageCallback))
-            .then(utils.InjectIntermediateCallback(postDevelopMergeCallback));
+        if (!cancelSecondaryMerge) {
+          return Promise.resolve(beforeMergeCallback(secondaryMergeBranchName, hotfixBranchName))
+            .then(() => utils.Repo.merge(secondaryBranch, hotfixBranch, repo, processMergeMessageCallback))
+            .then(utils.InjectIntermediateCallback(secondaryPostMergeCallback));
         }
         return Promise.resolve();
       })

@@ -39,5 +39,8 @@
   },
   "peerDependencies": {
     "nodegit": ">=0.13.0"
+  },
+  "dependencies": {
+    "ramda": "^0.24.1"
   }
 }
