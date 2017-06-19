@@ -121,7 +121,6 @@ class Hotfix {
           secondaryPostMergeCallback = postReleaseMergeCallback;
           secondaryMergeBranchName = releaseRefs[0];
 
-          // maybe we should cancel here?
           if (releaseRefs.length > 1) {
             return selectReleaseBranchCallback(releaseRefs)
               .then(releaseName => {
