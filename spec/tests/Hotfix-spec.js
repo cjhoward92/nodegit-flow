@@ -179,6 +179,51 @@ describe('Hotfix', function() {
       .then(done);
   });
 
+  it('should be able to finish hotfix using flow instance and keep the branch', function(done) {
+    const hotfixName = '1.0.0';
+    const fullTagName = `refs/tags/${this.versionPrefix}${hotfixName}`;
+    let hotfixBranch;
+    this.flow.startHotfix(hotfixName)
+      .then((_hotfixBranch) => {
+        hotfixBranch = _hotfixBranch;
+        expectStartHotfixSuccess(hotfixBranch, this.hotfixPrefix + hotfixName);
+
+        return RepoUtils.commitFileToRepo(
+          this.repo,
+          'anotherFile.js',
+          'Hello World',
+          'second commit',
+          this.firstCommit
+        );
+      })
+      .then(() => this.flow.finishHotfix(hotfixName, {keepBranch: true}))
+      .then(() => expectFinishHotfixSuccess.call(this, hotfixBranch, fullTagName, this.developBranch, true))
+      .then(done);
+  });
+
+  it('should be able to finish a hotfix that is still pointed at master', function(done) {
+    const hotfixName = '1.0.0';
+    const fullTagName = `refs/tags/${this.versionPrefix}${hotfixName}`;
+    const expectedCommitMessage = 'initial commit';
+    let hotfixBranch;
+    this.flow.startHotfix(hotfixName)
+      .then((_hotfixBranch) => {
+        hotfixBranch = _hotfixBranch;
+        expectStartHotfixSuccess(hotfixBranch, this.hotfixPrefix + hotfixName);
+        return this.flow.finishHotfix(hotfixName, {keepBranch: true});
+      })
+      .then(() => expectFinishHotfixSuccess.call(
+        this,
+        hotfixBranch,
+        fullTagName,
+        this.developBranch,
+        true,
+        expectedCommitMessage,
+        expectedCommitMessage
+      ))
+      .then(done);
+  });
+
   it('should be able to finish hotfix statically and keep the branch when a single release branch exists',
     function(done) {
       const hotfixName = '1.0.0';
@@ -292,49 +337,4 @@ describe('Hotfix', function() {
         .then(() => expectFinishHotfixSuccess.call(this, hotfixBranch, fullTagName, releaseBranch, true))
         .then(done);
     });
-
-  it('should be able to finish hotfix using flow instance and keep the branch', function(done) {
-    const hotfixName = '1.0.0';
-    const fullTagName = `refs/tags/${this.versionPrefix}${hotfixName}`;
-    let hotfixBranch;
-    this.flow.startHotfix(hotfixName)
-      .then((_hotfixBranch) => {
-        hotfixBranch = _hotfixBranch;
-        expectStartHotfixSuccess(hotfixBranch, this.hotfixPrefix + hotfixName);
-
-        return RepoUtils.commitFileToRepo(
-          this.repo,
-          'anotherFile.js',
-          'Hello World',
-          'second commit',
-          this.firstCommit
-        );
-      })
-      .then(() => this.flow.finishHotfix(hotfixName, {keepBranch: true}))
-      .then(() => expectFinishHotfixSuccess.call(this, hotfixBranch, fullTagName, this.developBranch, true))
-      .then(done);
-  });
-
-  it('should be able to finish a hotfix that is still pointed at master', function(done) {
-    const hotfixName = '1.0.0';
-    const fullTagName = `refs/tags/${this.versionPrefix}${hotfixName}`;
-    const expectedCommitMessage = 'initial commit';
-    let hotfixBranch;
-    this.flow.startHotfix(hotfixName)
-      .then((_hotfixBranch) => {
-        hotfixBranch = _hotfixBranch;
-        expectStartHotfixSuccess(hotfixBranch, this.hotfixPrefix + hotfixName);
-        return this.flow.finishHotfix(hotfixName, {keepBranch: true});
-      })
-      .then(() => expectFinishHotfixSuccess.call(
-        this,
-        hotfixBranch,
-        fullTagName,
-        this.developBranch,
-        true,
-        expectedCommitMessage,
-        expectedCommitMessage
-      ))
-      .then(done);
-  });
 });
